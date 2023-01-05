@@ -4,7 +4,7 @@
 package setup_test
 
 import (
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 
 	numaserialconf "github.com/openshift-kni/numaresources-operator/test/e2e/serial/config"
 )

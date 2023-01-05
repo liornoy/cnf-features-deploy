@@ -9,22 +9,26 @@ import (
 	"path"
 	"testing"
 
-	. "github.com/onsi/ginkgo"
-	"github.com/onsi/ginkgo/reporters"
+	. "github.com/onsi/ginkgo/v2"
+	ginkgo_reporters "github.com/onsi/ginkgo/v2/reporters"
+	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
-
-	ginkgo_reporters "kubevirt.io/qe-tools/pkg/ginkgo-reporters"
-
-	_ "github.com/metallb/metallb-operator/test/e2e/validation/tests"
 
 	testclient "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/client"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/utils"
+	kniK8sReporter "github.com/openshift-kni/k8sreporter"
+	qe_reporters "kubevirt.io/qe-tools/pkg/ginkgo-reporters"
 
+	_ "github.com/metallb/metallb-operator/test/e2e/validation/tests"
 	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/validationsuite/cluster" // this is needed otherwise the validation test won't be executed
 )
 
-var junitPath *string
-var reportPath *string
+var (
+	junitPath  *string
+	reportPath *string
+	reporter   *kniK8sReporter.KubernetesReporter
+	err        error
+)
 
 func init() {
 	junitPath = flag.String("junit", "", "the path for the junit format report")
@@ -33,26 +37,21 @@ func init() {
 
 func TestTest(t *testing.T) {
 	RegisterFailHandler(Fail)
-
-	rr := []Reporter{}
-	if ginkgo_reporters.Polarion.Run {
-		rr = append(rr, &ginkgo_reporters.Polarion)
-	}
+	_, reporterConfig := GinkgoConfiguration()
 
 	if *junitPath != "" {
 		junitFile := path.Join(*junitPath, "validation_junit.xml")
-		rr = append(rr, reporters.NewJUnitReporter(junitFile))
+		reporterConfig.JUnitReport = junitFile
 	}
 	if *reportPath != "" {
 		reportFile := path.Join(*reportPath, "validation_failure_report.log")
-		reporter, err := utils.NewReporter(reportFile)
+		reporter, err = utils.NewReporter(reportFile)
 		if err != nil {
 			log.Fatalf("Failed to create log reporter %s", err)
 		}
-		rr = append(rr, reporter)
 	}
 
-	RunSpecsWithDefaultAndCustomReporters(t, "CNF Features e2e validation", rr)
+	RunSpecs(t, "CNF Features e2e validation", reporterConfig)
 }
 
 var _ = BeforeSuite(func() {
@@ -61,4 +60,20 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 
+})
+
+var _ = ReportAfterSuite("configsuite", func(report types.Report) {
+	if qe_reporters.Polarion.Run {
+		ginkgo_reporters.ReportViaDeprecatedReporter(&qe_reporters.Polarion, report)
+	}
+})
+
+var _ = ReportAfterEach(func(specReport types.SpecReport) {
+	if specReport.Failed() == false {
+		return
+	}
+
+	if *reportPath != "" {
+		reporter.Dump(utils.LogsExtractDuration, specReport.FullText())
+	}
 })
