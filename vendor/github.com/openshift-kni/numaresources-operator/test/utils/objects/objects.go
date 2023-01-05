@@ -18,7 +18,10 @@ package objects
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"github.com/ghodss/yaml"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	nropv1alpha1 "github.com/openshift-kni/numaresources-operator/api/numaresourcesoperator/v1alpha1"
+	"github.com/openshift-kni/numaresources-operator/pkg/objectnames"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	machineconfigv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
@@ -47,20 +51,20 @@ func TestNROScheduler() *nropv1alpha1.NUMAResourcesScheduler {
 			APIVersion: nropv1alpha1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "numaresourcesscheduler",
+			Name: objectnames.DefaultNUMAResourcesSchedulerCrName,
 		},
 		Spec: nropv1alpha1.NUMAResourcesSchedulerSpec{
-			SchedulerImage: "quay.io/openshift-kni/scheduler-plugins:4.11-snapshot",
+			SchedulerImage: "quay.io/openshift-kni/scheduler-plugins:4.13-snapshot",
 		},
 	}
 }
 
-func NROName() string {
-	return "numaresourcesoperator"
+func NROObjectKey() client.ObjectKey {
+	return client.ObjectKey{Name: objectnames.DefaultNUMAResourcesOperatorCrName}
 }
 
-func NROObjectKey() client.ObjectKey {
-	return client.ObjectKey{Name: NROName()}
+func NROSchedObjectKey() client.ObjectKey {
+	return client.ObjectKey{Name: objectnames.DefaultNUMAResourcesSchedulerCrName}
 }
 
 func TestNRO(matchLabels map[string]string) *nropv1alpha1.NUMAResourcesOperator {
@@ -70,7 +74,7 @@ func TestNRO(matchLabels map[string]string) *nropv1alpha1.NUMAResourcesOperator 
 			APIVersion: nropv1alpha1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: NROName(),
+			Name: objectnames.DefaultNUMAResourcesOperatorCrName,
 		},
 		Spec: nropv1alpha1.NUMAResourcesOperatorSpec{
 			NodeGroups: []nropv1alpha1.NodeGroup{
@@ -164,4 +168,12 @@ func getKubeletConfig() *kubeletconfigv1beta1.KubeletConfiguration {
 		TopologyManagerPolicy: "single-numa-node",
 		TopologyManagerScope:  "pod",
 	}
+}
+
+func ToYAML(obj interface{}) string {
+	data, err := yaml.Marshal(obj)
+	if err != nil {
+		return fmt.Sprintf("<SERIALIZE ERROR: %v>", err)
+	}
+	return string(data)
 }

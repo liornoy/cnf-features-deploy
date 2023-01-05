@@ -18,11 +18,12 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -30,7 +31,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	k8swait "k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
+	corev1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	"github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
@@ -38,29 +41,30 @@ import (
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	nropv1alpha1 "github.com/openshift-kni/numaresources-operator/api/numaresourcesoperator/v1alpha1"
 
-	e2ereslist "github.com/openshift-kni/numaresources-operator/internal/resourcelist"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	machineconfigv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
+	nropmcp "github.com/openshift-kni/numaresources-operator/internal/machineconfigpools"
 	"github.com/openshift-kni/numaresources-operator/pkg/kubeletconfig"
-	nropmcp "github.com/openshift-kni/numaresources-operator/pkg/machineconfigpools"
+	"github.com/openshift-kni/numaresources-operator/pkg/objectstate/merge"
 	rteconfig "github.com/openshift-kni/numaresources-operator/rte/pkg/config"
+
+	"github.com/openshift-kni/numaresources-operator/internal/nodes"
+	e2ereslist "github.com/openshift-kni/numaresources-operator/internal/resourcelist"
+	"github.com/openshift-kni/numaresources-operator/internal/wait"
+
 	e2eclient "github.com/openshift-kni/numaresources-operator/test/utils/clients"
 	"github.com/openshift-kni/numaresources-operator/test/utils/configuration"
 	e2efixture "github.com/openshift-kni/numaresources-operator/test/utils/fixture"
 	e2enrt "github.com/openshift-kni/numaresources-operator/test/utils/noderesourcetopologies"
-	e2enodes "github.com/openshift-kni/numaresources-operator/test/utils/nodes"
 	"github.com/openshift-kni/numaresources-operator/test/utils/nrosched"
 	"github.com/openshift-kni/numaresources-operator/test/utils/objects"
-	e2ewait "github.com/openshift-kni/numaresources-operator/test/utils/objects/wait"
-	e2epadder "github.com/openshift-kni/numaresources-operator/test/utils/padder"
-	operatorv1 "github.com/openshift/api/operator/v1"
-	machineconfigv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
 	serialconfig "github.com/openshift-kni/numaresources-operator/test/e2e/serial/config"
 )
 
-var _ = Describe("[serial][disruptive][slow] numaresources configuration management", func() {
+var _ = Describe("[serial][disruptive][slow] numaresources configuration management", Serial, func() {
 	var fxt *e2efixture.Fixture
-	var padder *e2epadder.Padder
 	var nrtList nrtv1alpha1.NodeResourceTopologyList
 	var nrts []nrtv1alpha1.NodeResourceTopology
 
@@ -71,9 +75,6 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 		var err error
 		fxt, err = e2efixture.Setup("e2e-test-configuration")
 		Expect(err).ToNot(HaveOccurred(), "unable to setup test fixture")
-
-		padder, err = e2epadder.New(fxt.Client, fxt.Namespace.Name)
-		Expect(err).ToNot(HaveOccurred())
 
 		err = fxt.Client.List(context.TODO(), &nrtList)
 		Expect(err).ToNot(HaveOccurred())
@@ -94,97 +95,56 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 	})
 
 	AfterEach(func() {
-		err := padder.Clean()
-		Expect(err).NotTo(HaveOccurred())
-		err = e2efixture.Teardown(fxt)
+		err := e2efixture.Teardown(fxt)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	// note we hardcode the values we need here and when we pad node.
-	// This is ugly, but automatically computing the values is not straightforward
-	// and will we want to start lean and mean.
-
 	Context("cluster has at least one suitable node", func() {
 		timeout := 5 * time.Minute
-		// will be called at the end of the test to make sure we're not polluting the cluster
-		var cleanFuncs []func() error
 
-		BeforeEach(func() {
-			numOfNodeToBePadded := len(nrts) - 1
-
-			rl := corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("3"),
-				corev1.ResourceMemory: resource.MustParse("8G"),
-			}
-			By("padding the nodes before test start")
-			err := padder.Nodes(numOfNodeToBePadded).UntilAvailableIsResourceList(rl).Pad(timeout, e2epadder.PaddingOptions{})
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		AfterEach(func() {
-			By("unpadding the nodes after test finish")
-			err := padder.Clean()
-			Expect(err).ToNot(HaveOccurred())
-
-			for _, f := range cleanFuncs {
-				err := f()
-				Expect(err).ToNot(HaveOccurred())
-			}
-		})
-
-		It("[test_id:47674][reboot_required][slow][images][tier2] should be able to modify the configurable values under the NUMAResourcesOperator and NUMAResourcesScheduler CR", func() {
-
-			nroSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
-			err := fxt.Client.Get(context.TODO(), client.ObjectKey{Name: nrosched.NROSchedObjectName}, nroSchedObj)
-			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nrosched.NROSchedObjectName)
-			initialNroSchedObj := nroSchedObj.DeepCopy()
-
+		It("[test_id:47674][reboot_required][slow][images][tier2] should be able to modify the configurable values under the NUMAResourcesOperator CR", func() {
 			nroOperObj := &nropv1alpha1.NUMAResourcesOperator{}
-			err = fxt.Client.Get(context.TODO(), client.ObjectKey{Name: objects.NROName()}, nroOperObj)
-			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", objects.NROName())
+			nroKey := objects.NROObjectKey()
+			err := fxt.Client.Get(context.TODO(), nroKey, nroOperObj)
+			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nroKey.String())
 			initialNroOperObj := nroOperObj.DeepCopy()
 
-			workers, err := e2enodes.GetWorkerNodes(fxt.Client)
-			Expect(err).ToNot(HaveOccurred())
-			// TODO choose randomly
-			targetedNode := workers[0]
-
-			unlabelFunc, err := labelNode(fxt.Client, e2enodes.GetLabelRoleMCPTest(), targetedNode.Name)
+			workers, err := nodes.GetWorkerNodes(fxt.Client)
 			Expect(err).ToNot(HaveOccurred())
 
-			labelFunc, err := unlabelNode(fxt.Client, e2enodes.GetLabelRoleWorker(), "", targetedNode.Name)
+			targetIdx, ok := e2efixture.PickNodeIndex(workers)
+			Expect(ok).To(BeTrue())
+			targetedNode := workers[targetIdx]
+
+			By(fmt.Sprintf("Label node %q with %q and remove the label %q from it", targetedNode.Name, nodes.GetLabelRoleMCPTest(), nodes.GetLabelRoleWorker()))
+			unlabelFunc, err := labelNode(fxt.Client, nodes.GetLabelRoleMCPTest(), targetedNode.Name)
+			Expect(err).ToNot(HaveOccurred())
+
+			labelFunc, err := unlabelNode(fxt.Client, nodes.GetLabelRoleWorker(), "", targetedNode.Name)
 			Expect(err).ToNot(HaveOccurred())
 
 			defer func() {
-				By(fmt.Sprintf("unlabeling node: %q", targetedNode.Name))
+				By(fmt.Sprintf("Restore initial labels of node %q with %q", targetedNode.Name, nodes.GetLabelRoleWorker()))
 				err = unlabelFunc()
 				Expect(err).ToNot(HaveOccurred())
 
-				By(fmt.Sprintf("labeling node: %q", targetedNode.Name))
 				err = labelFunc()
 				Expect(err).ToNot(HaveOccurred())
 
-				By("reverting the changes under the NUMAResourcesScheduler object")
-				// we need that for the current ResourceVersion
-				nroSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
-				err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(initialNroSchedObj), nroSchedObj)
-				Expect(err).ToNot(HaveOccurred())
-
-				nroSchedObj.Spec = initialNroSchedObj.Spec
-				err = fxt.Client.Update(context.TODO(), nroSchedObj)
-				Expect(err).ToNot(HaveOccurred())
-
 				By("reverting the changes under the NUMAResourcesOperator object")
-				// we need that for the current ResourceVersion
-				nroOperObj := &nropv1alpha1.NUMAResourcesOperator{}
-				err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(initialNroOperObj), nroOperObj)
-				Expect(err).ToNot(HaveOccurred())
+				// see https://pkg.go.dev/github.com/onsi/gomega#Eventually category 3
+				Eventually(func(g Gomega) {
+					// we need that for the current ResourceVersion
+					nroOperObj := &nropv1alpha1.NUMAResourcesOperator{}
+					err := fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(initialNroOperObj), nroOperObj)
+					g.Expect(err).ToNot(HaveOccurred())
 
-				nroOperObj.Spec = initialNroOperObj.Spec
-				err = fxt.Client.Update(context.TODO(), nroOperObj)
-				Expect(err).ToNot(HaveOccurred())
+					nroOperObj.Spec = initialNroOperObj.Spec
+					err = fxt.Client.Update(context.TODO(), nroOperObj)
+					g.Expect(err).ToNot(HaveOccurred())
+				}).WithTimeout(10 * time.Minute).WithPolling(30 * time.Second).Should(Succeed())
 
-				mcps, err := nropmcp.GetNodeGroupsMCPs(context.TODO(), e2eclient.Client, nroOperObj.Spec.NodeGroups)
+				mcps, err := nropmcp.GetListByNodeGroupsV1Alpha1(context.TODO(), e2eclient.Client, nroOperObj.Spec.NodeGroups)
 				Expect(err).ToNot(HaveOccurred())
 
 				var wg sync.WaitGroup
@@ -193,7 +153,7 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 					go func(mcpool *machineconfigv1.MachineConfigPool) {
 						defer GinkgoRecover()
 						defer wg.Done()
-						err = e2ewait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
+						err = wait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
 						Expect(err).ToNot(HaveOccurred())
 					}(mcp)
 				}
@@ -204,39 +164,40 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 				err = fxt.Client.Delete(context.TODO(), testMcp)
 				Expect(err).ToNot(HaveOccurred())
 
-				err = e2ewait.ForMachineConfigPoolDeleted(fxt.Client, testMcp, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
+				err = wait.ForMachineConfigPoolDeleted(fxt.Client, testMcp, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
 				Expect(err).ToNot(HaveOccurred())
 			}() // end of defer
 
 			mcp := objects.TestMCP()
 			By(fmt.Sprintf("creating new MCP: %q", mcp.Name))
 			// we must have this label in order to match other machine configs that are necessary for proper functionality
-			mcp.Labels = map[string]string{"machineconfiguration.openshift.io/role": e2enodes.RoleMCPTest}
+			mcp.Labels = map[string]string{"machineconfiguration.openshift.io/role": nodes.RoleMCPTest}
 			mcp.Spec.MachineConfigSelector = &metav1.LabelSelector{
 				MatchExpressions: []metav1.LabelSelectorRequirement{
 					{
 						Key:      "machineconfiguration.openshift.io/role",
 						Operator: metav1.LabelSelectorOpIn,
-						Values:   []string{e2enodes.RoleWorker, e2enodes.RoleMCPTest},
+						Values:   []string{nodes.RoleWorker, nodes.RoleMCPTest},
 					},
 				},
 			}
 			mcp.Spec.NodeSelector = &metav1.LabelSelector{
-				MatchLabels: map[string]string{e2enodes.GetLabelRoleMCPTest(): ""},
+				MatchLabels: map[string]string{nodes.GetLabelRoleMCPTest(): ""},
 			}
 
 			err = fxt.Client.Create(context.TODO(), mcp)
 			Expect(err).ToNot(HaveOccurred())
 
-			By(fmt.Sprintf("modifing the NUMAResourcesOperator nodeGroups filed to match new mcp: %q labels %q", mcp.Name, mcp.Labels))
+			By(fmt.Sprintf("modifying the NUMAResourcesOperator nodeGroups field to match new mcp: %q labels %q", mcp.Name, mcp.Labels))
 			for i := range nroOperObj.Spec.NodeGroups {
 				nroOperObj.Spec.NodeGroups[i].MachineConfigPoolSelector.MatchLabels = mcp.Labels
 			}
 
+			// TODO: this shoould be retried
 			err = fxt.Client.Update(context.TODO(), nroOperObj)
 			Expect(err).ToNot(HaveOccurred())
 
-			mcps, err := nropmcp.GetNodeGroupsMCPs(context.TODO(), e2eclient.Client, nroOperObj.Spec.NodeGroups)
+			mcps, err := nropmcp.GetListByNodeGroupsV1Alpha1(context.TODO(), e2eclient.Client, nroOperObj.Spec.NodeGroups)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("waiting for mcps to get updated")
@@ -246,14 +207,14 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 				go func(mcpool *machineconfigv1.MachineConfigPool) {
 					defer GinkgoRecover()
 					defer wg.Done()
-					err = e2ewait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
+					err = wait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
 					Expect(err).ToNot(HaveOccurred())
 				}(mcp)
 			}
 			wg.Wait()
 
 			Eventually(func() (bool, error) {
-				dss, err := getDsOwnedBy(fxt.Client, nroOperObj.ObjectMeta)
+				dss, err := objects.GetDaemonSetsOwnedBy(fxt.Client, nroOperObj.ObjectMeta)
 				Expect(err).ToNot(HaveOccurred())
 
 				if len(dss) == 0 {
@@ -268,19 +229,20 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 					}
 				}
 				return true, nil
-			}, 10*time.Minute, 30*time.Second).Should(BeTrue())
+			}).WithTimeout(10 * time.Minute).WithPolling(30 * time.Second).Should(BeTrue())
 
-			By(fmt.Sprintf("modifing the NUMAResourcesOperator ExporterImage filed to %q", serialconfig.NropTestCIImage))
+			By(fmt.Sprintf("modifying the NUMAResourcesOperator ExporterImage field to %q", serialconfig.GetRteCiImage()))
 			err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(nroOperObj), nroOperObj)
 			Expect(err).ToNot(HaveOccurred())
 
-			nroOperObj.Spec.ExporterImage = serialconfig.NropTestCIImage
+			nroOperObj.Spec.ExporterImage = serialconfig.GetRteCiImage()
+			// TODO: this should be retried
 			err = fxt.Client.Update(context.TODO(), nroOperObj)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("checking RTE has the correct image")
 			Eventually(func() (bool, error) {
-				dss, err := getDsOwnedBy(fxt.Client, nroOperObj.ObjectMeta)
+				dss, err := objects.GetDaemonSetsOwnedBy(fxt.Client, nroOperObj.ObjectMeta)
 				Expect(err).ToNot(HaveOccurred())
 
 				if len(dss) == 0 {
@@ -291,25 +253,26 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 				for _, ds := range dss {
 					// RTE container shortcut
 					cnt := ds.Spec.Template.Spec.Containers[0]
-					if cnt.Image != serialconfig.NropTestCIImage {
-						klog.Warningf("container: %q image not updated yet. expected %q actual %q", cnt.Name, serialconfig.NropTestCIImage, cnt.Image)
+					if cnt.Image != serialconfig.GetRteCiImage() {
+						klog.Warningf("container: %q image not updated yet. expected %q actual %q", cnt.Name, serialconfig.GetRteCiImage(), cnt.Image)
 						return false, nil
 					}
 				}
 				return true, nil
-			}, 5*time.Minute, 10*time.Second).Should(BeTrue(), "failed to update RTE container with image %q", serialconfig.NropTestCIImage)
+			}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "failed to update RTE container with image %q", serialconfig.GetRteCiImage())
 
-			By(fmt.Sprintf("modifing the NUMAResourcesOperator LogLevel filed to %q", operatorv1.Trace))
+			By(fmt.Sprintf("modifying the NUMAResourcesOperator LogLevel field to %q", operatorv1.Trace))
 			err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(nroOperObj), nroOperObj)
 			Expect(err).ToNot(HaveOccurred())
 
 			nroOperObj.Spec.LogLevel = operatorv1.Trace
+			// TODO: this should be retried
 			err = fxt.Client.Update(context.TODO(), nroOperObj)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("checking the correct LogLevel")
 			Eventually(func() (bool, error) {
-				dss, err := getDsOwnedBy(fxt.Client, nroOperObj.ObjectMeta)
+				dss, err := objects.GetDaemonSetsOwnedBy(fxt.Client, nroOperObj.ObjectMeta)
 				Expect(err).ToNot(HaveOccurred())
 
 				if len(dss) == 0 {
@@ -332,15 +295,53 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 					}
 				}
 				return true, nil
-			}, 5*time.Minute, 10*time.Second).Should(BeTrue(), "failed to update RTE container with LogLevel %q", operatorv1.Trace)
+			}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "failed to update RTE container with LogLevel %q", operatorv1.Trace)
 
-			By(fmt.Sprintf("modifing the NUMAResourcesScheduler SchedulerName Filed to %q", serialconfig.SchedulerTestName))
-			err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(nroSchedObj), nroSchedObj)
-			Expect(err).ToNot(HaveOccurred())
+		})
 
+		It("[test_id:54916][tier2] should be able to modify the configurable values under the NUMAResourcesScheduler CR", func() {
+			initialNroSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
+			nroSchedKey := objects.NROSchedObjectKey()
+			err := fxt.Client.Get(context.TODO(), nroSchedKey, initialNroSchedObj)
+			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nroSchedKey.String())
+			nroSchedObj := initialNroSchedObj.DeepCopy()
+
+			By(fmt.Sprintf("modifying the NUMAResourcesScheduler SchedulerName field to %q", serialconfig.SchedulerTestName))
+			//updates must be done on object.Spec and active values should be fetched from object.Status
 			nroSchedObj.Spec.SchedulerName = serialconfig.SchedulerTestName
+			// TODO: this should be retried
 			err = fxt.Client.Update(context.TODO(), nroSchedObj)
 			Expect(err).ToNot(HaveOccurred())
+
+			By(fmt.Sprintf("Verify the scheduler object was updated properly with the new scheduler name %q", serialconfig.SchedulerTestName))
+			updatedSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
+			Eventually(func() string {
+				err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(nroSchedObj), updatedSchedObj)
+				Expect(err).ToNot(HaveOccurred())
+				return updatedSchedObj.Status.SchedulerName
+			}).WithTimeout(time.Minute).WithPolling(time.Second*15).Should(Equal(serialconfig.SchedulerTestName), "failed to update the schedulerName field,expected %q but found %q", serialconfig.SchedulerTestName, updatedSchedObj.Status.SchedulerName)
+
+			defer func() {
+				By("reverting the changes under the NUMAResourcesScheduler object")
+				// see https://pkg.go.dev/github.com/onsi/gomega#Eventually category 3
+				Eventually(func(g Gomega) {
+					currentSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
+					err := fxt.Client.Get(context.TODO(), nroSchedKey, currentSchedObj)
+					g.Expect(err).ToNot(HaveOccurred(), "cannot get current %q in the cluster", nroSchedKey.String())
+
+					currentSchedObj.Spec.SchedulerName = initialNroSchedObj.Status.SchedulerName
+					err = fxt.Client.Update(context.TODO(), currentSchedObj)
+					g.Expect(err).ToNot(HaveOccurred())
+				}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(Succeed(), "failed to revert changes the changes to the NRO scheduler object")
+
+				updatedSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
+				Eventually(func() string {
+					err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(initialNroSchedObj), updatedSchedObj)
+					Expect(err).ToNot(HaveOccurred())
+					return updatedSchedObj.Status.SchedulerName
+				}).WithTimeout(time.Minute).WithPolling(time.Second*15).Should(Equal(initialNroSchedObj.Status.SchedulerName), "failed to revert the schedulerName field,expected %q but found %q", initialNroSchedObj.Status.SchedulerName, updatedSchedObj.Status.SchedulerName)
+
+			}()
 
 			By("schedule pod using the new scheduler name")
 			testPod := objects.NewTestPodPause(fxt.Namespace.Name, e2efixture.RandomizeName("testpod"))
@@ -349,7 +350,7 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 			err = fxt.Client.Create(context.TODO(), testPod)
 			Expect(err).ToNot(HaveOccurred())
 
-			updatedPod, err := e2ewait.ForPodPhase(fxt.Client, testPod.Namespace, testPod.Name, corev1.PodRunning, 5*time.Minute)
+			updatedPod, err := wait.ForPodPhase(fxt.Client, testPod.Namespace, testPod.Name, corev1.PodRunning, timeout)
 			if err != nil {
 				_ = objects.LogEventsForPod(fxt.K8sClient, updatedPod.Namespace, updatedPod.Name)
 			}
@@ -362,14 +363,15 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 
 		It("[test_id:47585][reboot_required][slow] can change kubeletconfig and controller should adapt", func() {
 			nroOperObj := &nropv1alpha1.NUMAResourcesOperator{}
-			err := fxt.Client.Get(context.TODO(), client.ObjectKey{Name: objects.NROName()}, nroOperObj)
-			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", objects.NROName())
+			nroKey := objects.NROObjectKey()
+			err := fxt.Client.Get(context.TODO(), nroKey, nroOperObj)
+			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nroKey.String())
 
 			initialNrtList := nrtv1alpha1.NodeResourceTopologyList{}
 			initialNrtList, err = e2enrt.GetUpdated(fxt.Client, initialNrtList, timeout)
 			Expect(err).ToNot(HaveOccurred(), "cannot get any NodeResourceTopology object from the cluster")
 
-			mcps, err := nropmcp.GetNodeGroupsMCPs(context.TODO(), fxt.Client, nroOperObj.Spec.NodeGroups)
+			mcps, err := nropmcp.GetListByNodeGroupsV1Alpha1(context.TODO(), fxt.Client, nroOperObj.Spec.NodeGroups)
 			Expect(err).ToNot(HaveOccurred(), "cannot get MCPs associated with NUMAResourcesOperator %q", nroOperObj.Name)
 
 			kcList := &machineconfigv1.KubeletConfigList{}
@@ -400,6 +402,7 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 			err = kubeletconfig.KubeletConfToMCKubeletConf(kcObj, targetedKC)
 			Expect(err).ToNot(HaveOccurred())
 
+			// TODO: this should be retried
 			err = fxt.Client.Update(context.TODO(), targetedKC)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -410,7 +413,7 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 				go func(mcpool *machineconfigv1.MachineConfigPool) {
 					defer GinkgoRecover()
 					defer wg.Done()
-					err = e2ewait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
+					err = wait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
 					Expect(err).ToNot(HaveOccurred())
 				}(mcp)
 			}
@@ -421,15 +424,19 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 			err = fxt.Client.List(context.TODO(), cmList)
 			Expect(err).ToNot(HaveOccurred())
 
+			err = fxt.Client.Get(context.TODO(), client.ObjectKeyFromObject(targetedKC), targetedKC)
+			Expect(err).ToNot(HaveOccurred())
+
 			var nropCm *corev1.ConfigMap
 			for i := 0; i < len(cmList.Items); i++ {
-				if objects.IsOwnedBy(cmList.Items[i].ObjectMeta, nroOperObj.ObjectMeta) {
-					// there is only one ConfigMap owned by NUMAResourcesOperator
+				// the owner should be the KubeletConfig object and not the NUMAResourcesOperator CR
+				// so when KubeletConfig gets deleted, the ConfigMap gets deleted as well
+				if objects.IsOwnedBy(cmList.Items[i].ObjectMeta, targetedKC.ObjectMeta) {
 					nropCm = &cmList.Items[i]
 					break
 				}
 			}
-			Expect(nropCm).ToNot(BeNil(), "NUMAResourcesOperator %q should have exactly one ConfigMap", nroOperObj.Name)
+			Expect(nropCm).ToNot(BeNil(), "NUMAResourcesOperator %q should have a ConfigMap owned by KubeletConfig %q", nroOperObj.Name, targetedKC.Name)
 
 			cmKey := client.ObjectKeyFromObject(nropCm)
 			Eventually(func() bool {
@@ -447,12 +454,13 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 					return false
 				}
 				return true
-			}, timeout, time.Second*30).Should(BeTrue())
+			}).WithTimeout(timeout).WithPolling(time.Second * 30).Should(BeTrue())
 
 			By("schedule another workload requesting resources")
 			nroSchedObj := &nropv1alpha1.NUMAResourcesScheduler{}
-			err = fxt.Client.Get(context.TODO(), client.ObjectKey{Name: nrosched.NROSchedObjectName}, nroSchedObj)
-			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nrosched.NROSchedObjectName)
+			nroSchedKey := objects.NROSchedObjectKey()
+			err = fxt.Client.Get(context.TODO(), nroSchedKey, nroSchedObj)
+			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nroSchedKey.String())
 			schedulerName := nroSchedObj.Spec.SchedulerName
 
 			nrtPreCreatePodList, err := e2enrt.GetUpdated(fxt.Client, initialNrtList, timeout)
@@ -470,7 +478,7 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 			err = fxt.Client.Create(context.TODO(), testPod)
 			Expect(err).ToNot(HaveOccurred())
 
-			testPod, err = e2ewait.ForPodPhase(fxt.Client, testPod.Namespace, testPod.Name, corev1.PodRunning, timeout)
+			testPod, err = wait.ForPodPhase(fxt.Client, testPod.Namespace, testPod.Name, corev1.PodRunning, timeout)
 			if err != nil {
 				_ = objects.LogEventsForPod(fxt.K8sClient, testPod.Namespace, testPod.Name)
 			}
@@ -494,8 +502,13 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 
 			By(fmt.Sprintf("checking NRT for target node %q updated correctly", testPod.Spec.NodeName))
 			// TODO: this is only partially correct. We should check with NUMA zone granularity (not with NODE granularity)
-			_, err = e2enrt.CheckZoneConsumedResourcesAtLeast(*nrtPreCreate, *nrtPostCreate, rl)
+			dataBefore, err := yaml.Marshal(nrtPreCreate)
 			Expect(err).ToNot(HaveOccurred())
+			dataAfter, err := yaml.Marshal(nrtPostCreate)
+			Expect(err).ToNot(HaveOccurred())
+			match, err := e2enrt.CheckZoneConsumedResourcesAtLeast(*nrtPreCreate, *nrtPostCreate, rl, corev1qos.GetPodQOS(testPod))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(match).ToNot(Equal(""), "inconsistent accounting: no resources consumed by the running pod,\nNRT before test's pod: %s \nNRT after: %s \npod resources: %v", dataBefore, dataAfter, e2ereslist.ToString(rl))
 
 			defer func() {
 				By("reverting kubeletconfig changes")
@@ -509,6 +522,7 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 				err = kubeletconfig.KubeletConfToMCKubeletConf(kcObj, targetedKC)
 				Expect(err).ToNot(HaveOccurred())
 
+				// TODO: this should be retried
 				err = fxt.Client.Update(context.TODO(), targetedKC)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -518,12 +532,70 @@ var _ = Describe("[serial][disruptive][slow] numaresources configuration managem
 					go func(mcpool *machineconfigv1.MachineConfigPool) {
 						defer GinkgoRecover()
 						defer wg.Done()
-						err = e2ewait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
+						err = wait.ForMachineConfigPoolCondition(fxt.Client, mcpool, machineconfigv1.MachineConfigPoolUpdated, configuration.MachineConfigPoolUpdateInterval, configuration.MachineConfigPoolUpdateTimeout)
 						Expect(err).ToNot(HaveOccurred())
 					}(mcp)
 				}
 				wg.Wait()
 			}()
+		})
+
+		It("should report the NodeGroupConfig in the status", func() {
+			nroKey := objects.NROObjectKey()
+			nroOperObj := nropv1alpha1.NUMAResourcesOperator{}
+
+			err := fxt.Client.Get(context.TODO(), nroKey, &nroOperObj)
+			Expect(err).ToNot(HaveOccurred(), "cannot get %q in the cluster", nroKey.String())
+
+			if len(nroOperObj.Spec.NodeGroups) != 1 {
+				// TODO: this is the simplest case, there is no hard requirement really
+				// but we took the simplest option atm
+				e2efixture.Skipf(fxt, "more than one NodeGroup not yet supported, found %d", len(nroOperObj.Spec.NodeGroups))
+			}
+
+			seenStatusConf := false
+			err = k8swait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+				klog.Infof("getting: %q", nroKey.String())
+
+				// getting the same object twice is awkward, but still it seems better better than skipping inside a loop.
+				err := fxt.Client.Get(context.TODO(), nroKey, &nroOperObj)
+				if err != nil {
+					return false, fmt.Errorf("cannot get %q in the cluster: %w", nroKey.String(), err)
+				}
+				if len(nroOperObj.Status.MachineConfigPools) != len(nroOperObj.Spec.NodeGroups) {
+					return false, fmt.Errorf("MCP Status mismatch: found %d, expected %d",
+						len(nroOperObj.Status.MachineConfigPools), len(nroOperObj.Spec.NodeGroups),
+					)
+				}
+				klog.Infof("fetched NRO Object %q", nroKey.String())
+
+				statusConf := nroOperObj.Status.MachineConfigPools[0].Config // shortcut
+				if statusConf == nil {
+					// is this a transient error or does the cluster not support the Config reporting?
+					return false, nil
+				}
+
+				seenStatusConf = true
+
+				// normalize config to handle unspecified defaults
+				specConf := nropv1alpha1.DefaultNodeGroupConfig()
+				if nroOperObj.Spec.NodeGroups[0].Config != nil {
+					specConf = merge.NodeGroupConfig(specConf, *nroOperObj.Spec.NodeGroups[0].Config)
+				}
+
+				// the status must be always populated by the operator.
+				// If the user-provided spec is missing, the status must reflect the compiled-in defaults.
+				// This is wrapped in a Eventually because even in functional, well-behaving clusters,
+				// the operator may take nonzero time to populate the status, and this is still fine.\
+				// NOTE HERE: we need to match the types as well (ptr and ptr)
+				match := cmp.Equal(statusConf, &specConf)
+				klog.Infof("NRO Object %q status %v spec %v match %v", nroKey.String(), toJSON(statusConf), toJSON(specConf), match)
+				return match, nil
+			})
+			if !seenStatusConf {
+				e2efixture.Skipf(fxt, "NodeGroupConfig never reported in status, assuming not supported")
+			}
+			Expect(err).ToNot(HaveOccurred(), "failed to check the NodeGroupConfig status for %q", nroKey.String())
 		})
 	})
 })
@@ -554,4 +626,12 @@ func rteConfigFrom(data string) (*rteconfig.Config, error) {
 		return nil, err
 	}
 	return conf, nil
+}
+
+func toJSON(obj interface{}) string {
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return "<ERROR>"
+	}
+	return string(data)
 }

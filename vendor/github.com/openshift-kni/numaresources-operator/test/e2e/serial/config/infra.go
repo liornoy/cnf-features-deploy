@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,13 +35,15 @@ import (
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 
 	nropv1alpha1 "github.com/openshift-kni/numaresources-operator/api/numaresourcesoperator/v1alpha1"
-	"github.com/openshift-kni/numaresources-operator/pkg/machineconfigpools"
+	"github.com/openshift-kni/numaresources-operator/internal/machineconfigpools"
 	"github.com/openshift-kni/numaresources-operator/pkg/objectnames"
 
+	"github.com/openshift-kni/numaresources-operator/internal/wait"
+
 	numacellmanifests "github.com/openshift-kni/numaresources-operator/test/deviceplugin/pkg/numacell/manifests"
+
 	e2efixture "github.com/openshift-kni/numaresources-operator/test/utils/fixture"
 	"github.com/openshift-kni/numaresources-operator/test/utils/images"
-	e2ewait "github.com/openshift-kni/numaresources-operator/test/utils/objects/wait"
 )
 
 func SetupInfra(fxt *e2efixture.Fixture, nroOperObj *nropv1alpha1.NUMAResourcesOperator, nrtList nrtv1alpha1.NodeResourceTopologyList) {
@@ -58,7 +60,7 @@ func setupNUMACell(fxt *e2efixture.Fixture, nodeGroups []nropv1alpha1.NodeGroup,
 
 	Expect(nodeGroups).ToNot(BeEmpty(), "cannot autodetect the TAS node groups from the cluster")
 
-	mcps, err := machineconfigpools.GetNodeGroupsMCPs(context.TODO(), fxt.Client, nodeGroups)
+	mcps, err := machineconfigpools.GetListByNodeGroupsV1Alpha1(context.TODO(), fxt.Client, nodeGroups)
 	Expect(err).ToNot(HaveOccurred())
 
 	klog.Infof("setting e2e infra for %d MCPs", len(mcps))
@@ -85,7 +87,7 @@ func setupNUMACell(fxt *e2efixture.Fixture, nodeGroups []nropv1alpha1.NodeGroup,
 		dsName := objectnames.GetComponentName(numacellmanifests.Prefix, mcp.Name)
 		klog.Infof("setting e2e infra for %q: daemonset %q", mcp.Name, dsName)
 
-		pullSpec := getNUMACellDevicePluginPullSpec()
+		pullSpec := GetNUMACellDevicePluginPullSpec()
 		ds := numacellmanifests.DaemonSet(mcp.Spec.NodeSelector.MatchLabels, fxt.Namespace.Name, dsName, sa.Name, pullSpec)
 		err = fxt.Client.Create(context.TODO(), ds)
 		Expect(err).ToNot(HaveOccurred(), "cannot create the numacell daemonset %q in the namespace %q", ds.Name, ds.Namespace)
@@ -105,13 +107,19 @@ func setupNUMACell(fxt *e2efixture.Fixture, nodeGroups []nropv1alpha1.NodeGroup,
 			klog.Infof("waiting for daemonset %q to be ready", ds.Name)
 
 			// TODO: what if timeout < period?
-			ds, err := e2ewait.ForDaemonSetReady(fxt.Client, ds, 10*time.Second, timeout)
+			ds, err := wait.ForDaemonSetReady(fxt.Client, ds, 10*time.Second, timeout)
 			Expect(err).ToNot(HaveOccurred(), "DaemonSet %q failed to go running", ds.Name)
 		}(ds)
 	}
 	wg.Wait()
 
 	klog.Infof("e2e infra setup completed")
+}
+
+func GetNUMACellDevicePluginPullSpec() string {
+	pullSpec := getNUMACellDevicePluginPullSpec()
+	klog.Infof("using NUMACell image: %q", pullSpec)
+	return pullSpec
 }
 
 func getNUMACellDevicePluginPullSpec() string {
@@ -134,20 +142,35 @@ func LabelNodes(cli client.Client, nrtList nrtv1alpha1.NodeResourceTopologyList)
 		node.Labels[MultiNUMALabel] = labelValue
 
 		klog.Infof("labeling node %q with %s: %s", nrt.Name, MultiNUMALabel, labelValue)
+		// TODO: this should be retried
 		err = cli.Update(context.TODO(), &node)
 		Expect(err).ToNot(HaveOccurred())
 	}
 }
 
 func UnlabelNodes(cli client.Client, nrtList nrtv1alpha1.NodeResourceTopologyList) {
+	var wg sync.WaitGroup
 	for _, nrt := range nrtList.Items {
-		node := corev1.Node{}
-		err := cli.Get(context.TODO(), client.ObjectKey{Name: nrt.Name}, &node)
-		Expect(err).ToNot(HaveOccurred())
+		wg.Add(1)
+		go func(nodeName string) {
+			defer wg.Done()
+			unlabelNodeByName(cli, nodeName)
+		}(nrt.Name)
+	}
+	wg.Wait()
+}
 
-		klog.Infof("unlabeling node %q removing label %s", nrt.Name, MultiNUMALabel)
+func unlabelNodeByName(cli client.Client, nodeName string) {
+	var err error
+	// see https://pkg.go.dev/github.com/onsi/gomega#Eventually category 3
+	Eventually(func(g Gomega) {
+		node := corev1.Node{}
+		err = cli.Get(context.TODO(), client.ObjectKey{Name: nodeName}, &node)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		klog.Infof("unlabeling node %q removing label %s", nodeName, MultiNUMALabel)
 		delete(node.Labels, MultiNUMALabel)
 		err = cli.Update(context.TODO(), &node)
-		Expect(err).ToNot(HaveOccurred())
-	}
+		g.Expect(err).ToNot(HaveOccurred())
+	}).WithTimeout(3*time.Minute).WithPolling(30*time.Second).Should(Succeed(), "failed to unlabel node %q: %v", nodeName, err)
 }

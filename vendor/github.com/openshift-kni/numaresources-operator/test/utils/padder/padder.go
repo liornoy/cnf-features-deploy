@@ -1,18 +1,18 @@
 /*
-Copyright 2022 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ * Copyright 2022 Red Hat, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package padder
 
@@ -32,11 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+
+	"github.com/openshift-kni/numaresources-operator/internal/wait"
+
 	numacellapi "github.com/openshift-kni/numaresources-operator/test/deviceplugin/pkg/numacell/api"
+
 	"github.com/openshift-kni/numaresources-operator/test/utils/fixture"
 	nrtutil "github.com/openshift-kni/numaresources-operator/test/utils/noderesourcetopologies"
 	"github.com/openshift-kni/numaresources-operator/test/utils/objects"
-	"github.com/openshift-kni/numaresources-operator/test/utils/objects/wait"
 )
 
 // This package allows to control the amount of available allocationTarget under the nodes.
@@ -158,7 +161,7 @@ func (p *Padder) Pad(timeout time.Duration, options PaddingOptions) error {
 
 		for _, zone := range nrt.Zones {
 			// check that zone has at least the amount of allocationTarget that needed
-			if nrtutil.ZoneResourcesMatchesRequest(zone.Resources, p.allocationTarget) {
+			if nrtutil.ResourceInfoMatchesRequest(zone.Resources, p.allocationTarget) {
 				availResList := nrtutil.AvailableFromZone(zone)
 				diffList, err := diffAvailableToExpected(availResList, p.allocationTarget)
 				if err != nil {
@@ -198,7 +201,7 @@ func (p *Padder) Pad(timeout time.Duration, options PaddingOptions) error {
 		}
 	}
 
-	if failedPods := wait.ForPodListAllRunning(p.Client, pods); len(failedPods) > 0 {
+	if failedPods, _ := wait.ForPodListAllRunning(p.Client, pods, wait.DefaultPodRunningTimeout); len(failedPods) > 0 {
 		var asStrings []string
 		for _, pod := range failedPods {
 			asStrings = append(asStrings, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
