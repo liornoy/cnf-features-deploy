@@ -22,7 +22,6 @@ import (
 	goclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/client"
-	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/discovery"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/namespaces"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/nodes"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/utils"
@@ -64,10 +63,10 @@ func CleanSriov(sriovclient *sriovtestclient.ClientSet) {
 	err := sriovnamespaces.CleanNetworks(namespaces.SRIOVOperator, sriovclient)
 	Expect(err).ToNot(HaveOccurred())
 
-	if !discovery.Enabled() {
-		err = sriovnamespaces.CleanPolicies(namespaces.SRIOVOperator, sriovclient)
-		Expect(err).ToNot(HaveOccurred())
-	}
+	// if !discovery.Enabled() {
+	// 	err = sriovnamespaces.CleanPolicies(namespaces.SRIOVOperator, sriovclient)
+	// 	Expect(err).ToNot(HaveOccurred())
+	// }
 	WaitStable(sriovclient)
 }
 

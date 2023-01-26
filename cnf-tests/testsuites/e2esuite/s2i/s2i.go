@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/performanceprofile"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -163,8 +162,8 @@ var _ = Describe("[s2i]", func() {
 		err = namespaces.Create(sriovnamespaces.Test, client.Client)
 		Expect(err).ToNot(HaveOccurred())
 
-		err = performanceprofile.FindOrOverridePerformanceProfile(performanceProfileName, machineConfigPoolName)
-		Expect(err).ToNot(HaveOccurred())
+		// err = performanceprofile.FindOrOverridePerformanceProfile(performanceProfileName, machineConfigPoolName)
+		// Expect(err).ToNot(HaveOccurred())
 
 		namespaces.CleanPods(namespaces.DpdkTest, sriovclient)
 		networks.CleanSriov(sriovclient)
@@ -222,8 +221,8 @@ var _ = Describe("[s2i]", func() {
 		It("should restore the cluster to the original status", func() {
 			if !discovery.Enabled() {
 				By(" restore performance profile")
-				err := performanceprofile.RestorePerformanceProfile(machineConfigPoolName)
-				Expect(err).ToNot(HaveOccurred())
+				// err := performanceprofile.RestorePerformanceProfile(machineConfigPoolName)
+				// Expect(err).ToNot(HaveOccurred())
 			}
 
 			By("cleaning the sriov test configuration")

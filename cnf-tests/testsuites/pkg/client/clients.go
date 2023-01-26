@@ -20,8 +20,6 @@ import (
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	nfdv1 "github.com/openshift/cluster-nfd-operator/api/v1"
-	performancev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
-	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 	mcov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	clientmachineconfigv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	ptpv1 "github.com/openshift/ptp-operator/pkg/client/clientset/versioned/typed/ptp/v1"
@@ -106,9 +104,9 @@ func New(kubeconfig string) *ClientSet {
 	}
 
 	// Setup Scheme for all resources
-	if err := performancev2.AddToScheme(myScheme); err != nil {
-		panic(err)
-	}
+	// if err := performancev2.AddToScheme(myScheme); err != nil {
+	// 	panic(err)
+	// }
 
 	if err := configv1.AddToScheme(myScheme); err != nil {
 		panic(err)
@@ -118,9 +116,9 @@ func New(kubeconfig string) *ClientSet {
 		panic(err)
 	}
 
-	if err := tunedv1.AddToScheme(myScheme); err != nil {
-		panic(err)
-	}
+	// if err := tunedv1.AddToScheme(myScheme); err != nil {
+	// 	panic(err)
+	// }
 
 	if err := sriovk8sv1.SchemeBuilder.AddToScheme(myScheme); err != nil {
 		panic(err)

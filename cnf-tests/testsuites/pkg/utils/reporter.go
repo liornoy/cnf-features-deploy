@@ -12,8 +12,6 @@ import (
 	ocpbuildv1 "github.com/openshift/api/build/v1"
 	ocpv1 "github.com/openshift/api/config/v1"
 	nfdv1 "github.com/openshift/cluster-nfd-operator/api/v1"
-	performancev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
-	perfUtils "github.com/openshift/cluster-node-tuning-operator/test/e2e/performanceprofile/functests/utils"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ptpv1 "github.com/openshift/ptp-operator/api/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,10 +36,10 @@ func NewReporter(reportPath string) (*k8sreporter.KubernetesReporter, error) {
 		if err != nil {
 			return err
 		}
-		err = performancev2.SchemeBuilder.AddToScheme(s)
-		if err != nil {
-			return err
-		}
+		// err = performancev2.SchemeBuilder.AddToScheme(s)
+		// if err != nil {
+		// 	return err
+		// }
 		err = netattdefv1.SchemeBuilder.AddToScheme(s)
 		if err != nil {
 			return err
@@ -90,9 +88,9 @@ func NewReporter(reportPath string) (*k8sreporter.KubernetesReporter, error) {
 	}
 
 	namespacesToDump := map[string]string{
-		namespaces.PTPOperator:                  "ptp",
-		namespaces.SRIOVOperator:                "sriov",
-		perfUtils.NamespaceTesting:              "performance",
+		namespaces.PTPOperator:   "ptp",
+		namespaces.SRIOVOperator: "sriov",
+		//	perfUtils.NamespaceTesting:              "performance",
 		namespaces.DpdkTest:                     "dpdk",
 		sriovNamespaces.Test:                    "sriov",
 		MultiNetworkPolicyNamespaceX:            "multinetworkpolicy",
@@ -126,7 +124,7 @@ func NewReporter(reportPath string) (*k8sreporter.KubernetesReporter, error) {
 		{Cr: &ptpv1.PtpConfigList{}},
 		{Cr: &ptpv1.NodePtpDeviceList{}},
 		{Cr: &ptpv1.PtpOperatorConfigList{}},
-		{Cr: &performancev2.PerformanceProfileList{}},
+		//{Cr: &performancev2.PerformanceProfileList{}},
 		{Cr: &sriovv1.SriovNetworkNodePolicyList{}},
 		{Cr: &sriovv1.SriovNetworkList{}},
 		{Cr: &sriovv1.SriovNetworkNodeStateList{}},

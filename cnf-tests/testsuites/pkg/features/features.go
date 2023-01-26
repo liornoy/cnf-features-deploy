@@ -6,15 +6,12 @@ import (
 	sriovClean "github.com/k8snetworkplumbingwg/sriov-network-operator/test/util/clean"
 	sriovNamespaces "github.com/k8snetworkplumbingwg/sriov-network-operator/test/util/namespaces"
 	numaserialconf "github.com/openshift-kni/numaresources-operator/test/e2e/serial/config"
-	perfUtils "github.com/openshift/cluster-node-tuning-operator/test/e2e/performanceprofile/functests/utils"
-	perfClean "github.com/openshift/cluster-node-tuning-operator/test/e2e/performanceprofile/functests/utils/clean"
 
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/fec"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/security"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/sro"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/vrf"
 	testclient "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/client"
-	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/discovery"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/namespaces"
 	testutils "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/utils"
 	ptpclean "github.com/openshift/ptp-operator/test/pkg/clean"
@@ -26,20 +23,20 @@ type SuiteFixture interface {
 	Cleanup() error
 }
 
-type PAOFixture struct {
-}
+// type PAOFixture struct {
+// }
 
-func (p *PAOFixture) Setup() error {
-	return namespaces.Create(perfUtils.NamespaceTesting, testclient.Client)
-}
+// func (p *PAOFixture) Setup() error {
+// 	return namespaces.Create(perfUtils.NamespaceTesting, testclient.Client)
+// }
 
-func (p *PAOFixture) Cleanup() error {
-	if !discovery.Enabled() {
-		perfClean.All()
-	}
+// func (p *PAOFixture) Cleanup() error {
+// 	if !discovery.Enabled() {
+// 		perfClean.All()
+// 	}
 
-	return namespaces.Delete(perfUtils.NamespaceTesting, testclient.Client)
-}
+// 	return namespaces.Delete(perfUtils.NamespaceTesting, testclient.Client)
+// }
 
 type DPDKFixture struct {
 }

@@ -15,7 +15,6 @@ import (
 
 	ginkgo_reporters "github.com/onsi/ginkgo/v2/reporters"
 	kniK8sReporter "github.com/openshift-kni/k8sreporter"
-	_ "github.com/openshift/cluster-node-tuning-operator/test/e2e/performanceprofile/functests/0_config" // this is needed otherwise the performance test won't be executed
 	qe_reporters "kubevirt.io/qe-tools/pkg/ginkgo-reporters"
 
 	testclient "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/client"

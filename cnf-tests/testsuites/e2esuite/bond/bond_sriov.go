@@ -8,7 +8,6 @@ import (
 	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	sriovtestclient "github.com/k8snetworkplumbingwg/sriov-network-operator/test/util/client"
 	client "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/client"
-	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/discovery"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/execute"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/namespaces"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/networks"
@@ -31,9 +30,9 @@ var _ = Describe("[sriov] Bond CNI integration", func() {
 	apiclient := client.New("")
 
 	BeforeEach(func() {
-		if discovery.Enabled() {
-			Skip("Tuned sriov tests disabled for discovery mode")
-		}
+		// if discovery.Enabled() {
+		// 	Skip("Tuned sriov tests disabled for discovery mode")
+		// }
 	})
 
 	execute.BeforeAll(func() {

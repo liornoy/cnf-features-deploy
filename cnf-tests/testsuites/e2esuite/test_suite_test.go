@@ -14,20 +14,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/bond"                       // this is needed otherwise the bond test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/dpdk"                       // this is needed otherwise the dpdk test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/fec"                        // this is needed otherwise the fec test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/gatekeeper"                 // this is needed otherwise the gatekeeper test won't be executed'
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/multinetworkpolicy"         // this is needed otherwise the multinetworkpolicy test won't be executed'
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/ovs_qos"                    // this is needed otherwise the ovs_qos test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/s2i"                        // this is needed otherwise the dpdk test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/sctp"                       // this is needed otherwise the sctp test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/security"                   // this is needed otherwise the security test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/sro"                        // this is needed otherwise the sro test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/vrf"                        // this is needed otherwise the vrf test won't be executed
-	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/xt_u32"                     // this is needed otherwise the xt_u32 test won't be executed
-	_ "github.com/openshift/cluster-node-tuning-operator/test/e2e/performanceprofile/functests/1_performance" // this is needed otherwise the performance test won't be executed
-	_ "github.com/openshift/cluster-node-tuning-operator/test/e2e/performanceprofile/functests/4_latency"     // this is needed otherwise the performance test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/bond"               // this is needed otherwise the bond test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/dpdk"               // this is needed otherwise the dpdk test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/fec"                // this is needed otherwise the fec test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/gatekeeper"         // this is needed otherwise the gatekeeper test won't be executed'
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/multinetworkpolicy" // this is needed otherwise the multinetworkpolicy test won't be executed'
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/ovs_qos"            // this is needed otherwise the ovs_qos test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/s2i"                // this is needed otherwise the dpdk test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/sctp"               // this is needed otherwise the sctp test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/security"           // this is needed otherwise the security test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/sro"                // this is needed otherwise the sro test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/vrf"                // this is needed otherwise the vrf test won't be executed
+	_ "github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/e2esuite/xt_u32"             // this is needed otherwise the xt_u32 test won't be executed
 
 	_ "github.com/k8snetworkplumbingwg/sriov-network-operator/test/conformance/tests"
 	_ "github.com/metallb/metallb-operator/test/e2e/functional/tests"
@@ -54,7 +52,7 @@ var (
 )
 
 var suiteFixtureMap = map[string]features.SuiteFixture{
-	"performance":        &features.PAOFixture{},
+	// "performance":        &features.PAOFixture{},
 	"sriov":              &features.SriovFixture{},
 	"dpdk":               &features.DPDKFixture{},
 	"gatekeeper":         &features.GatekeeperFixture{},

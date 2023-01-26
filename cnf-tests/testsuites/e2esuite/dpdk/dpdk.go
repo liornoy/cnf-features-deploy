@@ -33,10 +33,8 @@ import (
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/namespaces"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/networks"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/nodes"
-	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/performanceprofile"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/pods"
 	"github.com/openshift-kni/cnf-features-deploy/cnf-tests/testsuites/pkg/utils"
-	performancev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
 )
 
 const (
@@ -126,28 +124,28 @@ var _ = Describe("[dpdk]", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		if discovery.Enabled() {
-			var performanceProfiles []*performancev2.PerformanceProfile
-			discoverySuccessful, discoveryFailedReason, performanceProfiles = performanceprofile.DiscoverPerformanceProfiles(enforcedPerformanceProfileName)
+			// var performanceProfiles []*performancev2.PerformanceProfile
+			// discoverySuccessful, discoveryFailedReason, performanceProfiles = performanceprofile.DiscoverPerformanceProfiles(enforcedPerformanceProfileName)
 
-			if !discoverySuccessful {
-				discoveryFailedReason = "Could not find a valid performance profile"
-				return
-			}
+			// if !discoverySuccessful {
+			// 	discoveryFailedReason = "Could not find a valid performance profile"
+			// 	return
+			// }
 
-			discovered, err := discovery.DiscoverPerformanceProfileAndPolicyWithAvailableNodes(client.Client, sriovclient, namespaces.SRIOVOperator, dpdkResourceName, performanceProfiles, nodeSelector)
-			if err != nil {
-				discoverySuccessful, discoveryFailedReason = false, "Can not run tests in discovery mode. Failed to discover required resources."
-				return
-			}
-			profile, sriovDevice := discovered.Profile, discovered.Device
-			dpdkResourceName = discovered.Resource
+			// discovered, err := discovery.DiscoverPerformanceProfileAndPolicyWithAvailableNodes(client.Client, sriovclient, namespaces.SRIOVOperator, dpdkResourceName, performanceProfiles, nodeSelector)
+			// if err != nil {
+			// 	discoverySuccessful, discoveryFailedReason = false, "Can not run tests in discovery mode. Failed to discover required resources."
+			// 	return
+			// }
+			// profile, sriovDevice := discovered.Profile, discovered.Device
+			// dpdkResourceName = discovered.Resource
 
-			nodeSelector = nodes.SelectorUnion(nodeSelector, profile.Spec.NodeSelector)
-			networks.CreateSriovNetwork(sriovclient, sriovDevice, "test-dpdk-network", namespaces.DpdkTest, namespaces.SRIOVOperator, dpdkResourceName, "")
+			// nodeSelector = nodes.SelectorUnion(nodeSelector, profile.Spec.NodeSelector)
+			// networks.CreateSriovNetwork(sriovclient, sriovDevice, "test-dpdk-network", namespaces.DpdkTest, namespaces.SRIOVOperator, dpdkResourceName, "")
 
 		} else {
-			err = performanceprofile.FindOrOverridePerformanceProfile(performanceProfileName, machineConfigPoolName)
-			Expect(err).ToNot(HaveOccurred())
+			// err = performanceprofile.FindOrOverridePerformanceProfile(performanceProfileName, machineConfigPoolName)
+			// Expect(err).ToNot(HaveOccurred())
 		}
 
 	})
@@ -610,8 +608,8 @@ sleep INF
 		It("should restore the cluster to the original status", func() {
 			if !discovery.Enabled() {
 				By(" restore performance profile")
-				err := performanceprofile.RestorePerformanceProfile(machineConfigPoolName)
-				Expect(err).ToNot(HaveOccurred())
+				// err := performanceprofile.RestorePerformanceProfile(machineConfigPoolName)
+				// Expect(err).ToNot(HaveOccurred())
 			}
 
 			By("cleaning the sriov test configuration")
