@@ -1,0 +1,12 @@
+[submodule "metallb-operator"]
+	path = metallb-operator
+	url = https://github.com/metallb/metallb-operator.git
+[submodule "ptp-operator"]
+	path = ptp-operator
+	url = https://github.com/openshift/ptp-operator.git
+[submodule "sriov-network-operator"]
+	path = sriov-network-operator
+	url = https://github.com/k8snetworkplumbingwg/sriov-network-operator.git
+[submodule "cluster-node-tuning-operator"]
+	path = cluster-node-tuning-operator
+	url = https://github.com/openshift/cluster-node-tuning-operator.git
