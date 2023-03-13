@@ -1,7 +1,3 @@
-#TODO add default features here
-export FEATURES?=sctp performance xt_u32 vrf container-mount-namespace metallb tuningcni
-export SKIP_TESTS?=
-export FOCUS_TESTS?=
 IMAGE_BUILD_CMD ?= "docker"
 
 # The environment represents the kustomize patches to apply when deploying the features
@@ -34,7 +30,7 @@ deps-update:
 
 functests: 
 	@echo "Running Functional Tests"
-	SKIP_TESTS="$(SKIP_TESTS)" FEATURES="$(FEATURES)" FOCUS_TESTS="$(FOCUS_TESTS)" hack/run-functests.sh
+	SKIP_TESTS="$(SKIP_TESTS)" SUITES="$(SUITES)" FEATURES="$(FEATURES)" FOCUS_TESTS="$(FOCUS_TESTS)" hack/run-functests.sh
 
 #validate is intended to validate the deployment as a whole, not focusing
 # but eventually skipping
@@ -116,6 +112,9 @@ custom-rpms:
 test-bin:
 	@echo "Making test binary"
 	cnf-tests/hack/build-test-bin.sh
+
+run-tests: init-git-submodules test-bin
+	cnf-tests/entrypoint/test-run.sh $(SUITES) $(FEATURES) 
 
 cnf-tests-local:
 	@echo "Making cnf-tests local"
