@@ -95,6 +95,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nxadm/tail v1.4.8 // indirect
+	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/openshift/custom-resource-status v0.0.0-20210221154447-420d9ecf2a00 // indirect
 	github.com/operator-framework/api v0.10.7 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -128,6 +130,7 @@ require (
 	google.golang.org/genproto v0.0.0-20221202195650-67e5cbc046fd // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/apiserver v0.26.1 // indirect
 	k8s.io/component-base v0.26.1 // indirect
@@ -186,7 +189,7 @@ replace (
 
 // Test deps
 replace (
-	github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/openshift/sriov-network-operator v0.0.0-20230119162442-a99248c658d7 // release-4.13
+	github.com/k8snetworkplumbingwg/sriov-network-operator => github.com/openshift/sriov-network-operator v0.0.0-20230321005801-74760e2a8ddf // release-4.12
 	github.com/k8stopologyawareschedwg/resource-topology-exporter => github.com/k8stopologyawareschedwg/resource-topology-exporter v0.8.0
 	github.com/metallb/metallb-operator => github.com/openshift/metallb-operator v0.0.0-20230123113337-fa1059e25fe1 // release-4.13
 	github.com/openshift-psap/special-resource-operator => github.com/openshift/special-resource-operator v0.0.0-20211202035230-4c86f99c426b // release-4.10
