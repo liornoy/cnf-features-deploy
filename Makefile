@@ -136,7 +136,7 @@ update-helm-chart:
 
 init-git-submodules:
 	@echo "Initializing git submodules"
-	git submodule update --init --force
+	git submodule update --init --force --recursive --remote
 	cnf-tests/hack/init-git-submodules.sh
 
 .PHONY: print-git-components
